@@ -7,10 +7,9 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { LiveMapPage } from "./pages/LiveMapPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MaintenancePage } from "./pages/MaintenancePage";
-import { RoiPage } from "./pages/RoiPage";
 import { api, getToken, setToken, UserMe } from "./api/client";
 
-type PageKey = "dashboard" | "map" | "maintenance" | "analytics" | "client" | "roi";
+type PageKey = "dashboard" | "map" | "maintenance" | "analytics" | "client";
 
 const NAV_ADMIN: Array<{ key: PageKey; label: string; hint: string }> = [
   { key: "dashboard", label: "Vue d'ensemble", hint: "Tableau de bord" },
@@ -18,7 +17,6 @@ const NAV_ADMIN: Array<{ key: PageKey; label: string; hint: string }> = [
   { key: "maintenance", label: "Maintenance", hint: "Alertes & suivi" },
   { key: "analytics", label: "Analytics", hint: "Carburant & perf" },
   { key: "client", label: "Client", hint: "Commandes" },
-  { key: "roi", label: "ROI", hint: "Plan d'économies" },
 ];
 
 const NAV_CLIENT: Array<{ key: PageKey; label: string; hint: string }> = [
@@ -37,8 +35,6 @@ function Page({ page }: { page: PageKey }) {
       return <AnalyticsPage />;
     case "client":
       return <ClientPage />;
-    case "roi":
-      return <RoiPage />;
   }
 }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import random
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select, text
@@ -106,6 +107,32 @@ def list_vehicles(db: Session = Depends(get_db), _: User = Depends(require_admin
     return list(db.scalars(select(Vehicle).order_by(Vehicle.id)))
 
 
+@router.post("/admin/vehicles/randomize-maintenance")
+def randomize_vehicle_maintenance(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> dict:
+    """
+    Utilitaire admin (dev/presentation):
+    - varie odometer_km et next_service_km pour éviter 100% des véhicules en alerte high.
+    """
+    vehicles = list(db.scalars(select(Vehicle)))
+    if not vehicles:
+        return {"updated": 0}
+
+    for v in vehicles:
+        # Odomètre réaliste: 0..120k km
+        odom = float(random.randint(0, 120_000))
+        # Prochaine révision: dans 200..15 000 km
+        next_service = odom + float(random.randint(200, 15_000))
+        v.odometer_km = odom
+        v.next_service_km = next_service
+
+    db.add_all(vehicles)
+    db.commit()
+    return {"updated": len(vehicles)}
+
+
 # -------------------------
 # Tracking / positions
 # -------------------------
@@ -155,7 +182,15 @@ def ingest_position(payload: PositionIn, db: Session = Depends(get_db)) -> Posit
     if not vehicle:
         # En production on ferait de la gestion d'identité (auth) + onboarding.
         # Pour garder le système simple, on auto-enregistre la ligne véhicule.
-        vehicle = Vehicle(label=f"VEH-{payload.vehicle_id}", plate_number=f"PLATE-{payload.vehicle_id}")
+        # On initialise des compteurs variables pour éviter des alertes uniformes.
+        odom = float(random.randint(0, 120_000))
+        next_service = odom + float(random.randint(200, 15_000))
+        vehicle = Vehicle(
+            label=f"VEH-{payload.vehicle_id}",
+            plate_number=f"PLATE-{payload.vehicle_id}",
+            odometer_km=odom,
+            next_service_km=next_service,
+        )
         db.add(vehicle)
         db.commit()
         db.refresh(vehicle)
@@ -311,13 +346,91 @@ def maintenance_alerts(db: Session = Depends(get_db), _: User = Depends(require_
 # Client module (commandes)
 # -------------------------
 
+@router.get("/client/locations")
+def client_locations(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> dict:
+    """
+    Liste de hubs/locations disponibles pour créer une commande côté client.
+    On réutilise les RoutingNodes (configurés par l'admin).
+    """
+    nodes = list(db.scalars(select(RoutingNode).order_by(RoutingNode.key)))
+    return {"locations": [{"key": n.key.upper(), "label": n.key.upper()} for n in nodes]}
+
+
+def _build_routing_graph(db: Session) -> tuple[dict[str, list[tuple[str, float]]], dict[str, RoutingNode]]:
+    nodes = list(db.scalars(select(RoutingNode)))
+    node_by_key = {n.key.upper(): n for n in nodes}
+    edges = list(db.scalars(select(RoutingEdge)))
+
+    graph: dict[str, list[tuple[str, float]]] = {}
+    for n in nodes:
+        graph[n.key.upper()] = []
+
+    # index id->key (évite le next() O(n))
+    key_by_id = {n.id: n.key.upper() for n in nodes}
+    for e in edges:
+        from_key = key_by_id.get(e.from_node_id)
+        to_key = key_by_id.get(e.to_node_id)
+        if from_key and to_key:
+            graph[from_key].append((to_key, float(e.cost_minutes)))
+    return graph, node_by_key
+
+
+def _estimate_path_distance_km(node_by_key: dict[str, RoutingNode], path: list[str]) -> float:
+    total = 0.0
+    for a, b in zip(path, path[1:], strict=False):
+        na = node_by_key.get(a)
+        nb = node_by_key.get(b)
+        if not na or not nb:
+            continue
+        total += haversine_distance_km(na.lat, na.lon, nb.lat, nb.lon)
+    return float(total)
+
+
+def _estimate_eta_minutes(db: Session, origin_key: str, destination_key: str) -> int:
+    """
+    ETA simple:
+    - si graphe routage existe: Dijkstra + somme des coûts minutes
+    - sinon: fallback distance directe (km) / vitesse moyenne
+    """
+    origin = origin_key.upper()
+    dest = destination_key.upper()
+
+    graph, node_by_key = _build_routing_graph(db)
+    if origin in graph and dest in graph and any(graph.values()):
+        path = dijkstra(graph, start=origin, goal=dest)
+        if path:
+            minutes = _estimate_path_minutes(graph, path)
+            if minutes and minutes > 0:
+                return int(round(minutes))
+
+    # fallback : distance directe si coords connues
+    n1 = node_by_key.get(origin)
+    n2 = node_by_key.get(dest)
+    if n1 and n2:
+        dist_km = haversine_distance_km(n1.lat, n1.lon, n2.lat, n2.lon)
+        avg_speed_kmh = 75.0
+        base = (dist_km / avg_speed_kmh) * 60.0
+        buffer = 25.0
+        return int(max(30, round(base + buffer)))
+
+    return 60
+
+
+def _generate_order_ref(db: Session) -> str:
+    year = datetime.now(tz=timezone.utc).year
+    # Boucle courte pour éviter collision (order_ref unique).
+    for _ in range(20):
+        suffix = random.randint(1000, 9999)
+        ref = f"CMD-{year}-{suffix}"
+        exists = db.scalar(select(Delivery).where(Delivery.order_ref == ref))
+        if not exists:
+            return ref
+    # fallback ultime
+    return f"CMD-{year}-{random.randint(100000, 999999)}"
+
 
 @router.post("/deliveries", response_model=DeliveryOut)
 def create_delivery(payload: DeliveryCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Delivery:
-    existing = db.scalar(select(Delivery).where(Delivery.order_ref == payload.order_ref))
-    if existing:
-        raise HTTPException(status_code=409, detail="Commande déjà existante (order_ref).")
-
     data = payload.model_dump()
     client_user_id: int | None = None
     if user.role == "client":
@@ -325,12 +438,35 @@ def create_delivery(payload: DeliveryCreate, db: Session = Depends(get_db), user
     else:
         client_user_id = data.pop("client_user_id", None)
 
+    # order_ref: générée automatiquement si absente, ou toujours générée pour un client.
+    if user.role == "client":
+        order_ref = _generate_order_ref(db)
+    else:
+        order_ref = (data.get("order_ref") or "").strip()
+        order_ref = order_ref if order_ref else _generate_order_ref(db)
+
+    existing = db.scalar(select(Delivery).where(Delivery.order_ref == order_ref))
+    if existing:
+        raise HTTPException(status_code=409, detail="Commande déjà existante (order_ref).")
+
+    origin = (data.get("origin") or "CASA").strip()
+    destination = (data.get("destination") or "TANGER_MED").strip()
+
+    # Côté client: pas de choix véhicule (assignation exploitation).
+    vehicle_id = data.get("vehicle_id") if user.role == "admin" else None
+
+    eta = data.get("eta_minutes")
+    if user.role == "client" or eta is None:
+        eta_minutes = _estimate_eta_minutes(db, origin_key=origin, destination_key=destination)
+    else:
+        eta_minutes = int(eta)
+
     d = Delivery(
-        order_ref=data["order_ref"],
-        origin=data.get("origin") or "Casablanca",
-        destination=data.get("destination") or "Tanger Med",
-        vehicle_id=data.get("vehicle_id"),
-        eta_minutes=int(data.get("eta_minutes") or 60),
+        order_ref=order_ref,
+        origin=origin,
+        destination=destination,
+        vehicle_id=vehicle_id,
+        eta_minutes=eta_minutes,
         client_user_id=client_user_id,
     )
     db.add(d)

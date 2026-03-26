@@ -109,13 +109,15 @@ export type Delivery = {
 };
 
 export type DeliveryCreate = {
-  order_ref: string;
+  order_ref?: string | null;
   origin?: string;
   destination?: string;
   vehicle_id?: number | null;
   eta_minutes?: number;
   client_user_id?: number | null;
 };
+
+export type ClientLocation = { key: string; label: string };
 
 export type RoiInput = {
   annual_maintenance_cost_eur: number;
@@ -160,6 +162,7 @@ export const api = {
   fuelAnalytics: (minutes = 240) =>
     request<{ window_minutes: number; vehicles: FuelAnalyticsRow[] }>(`/analytics/fuel?minutes=${minutes}`),
   deliveries: () => request<Delivery[]>("/deliveries"),
+  clientLocations: () => request<{ locations: ClientLocation[] }>("/client/locations"),
   clientTrack: (orderRef: string) => request<Delivery>(`/client/track/${encodeURIComponent(orderRef)}`),
   createDelivery: (payload: DeliveryCreate) =>
     request<Delivery>("/deliveries", { method: "POST", body: JSON.stringify(payload) }),

@@ -150,8 +150,24 @@ export function DashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="muted">
-                {routeLoading ? "Calcul itinéraire... (CASA → PARIS)" : route?.message ?? "Aucun itinéraire disponible"}
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="muted">
+                  {routeLoading ? "Calcul itinéraire... (CASA → PARIS)" : route?.message ?? "Aucun itinéraire disponible"}
+                </div>
+
+                <div className="pill" style={{ justifyContent: "space-between" }}>
+                  <span className="muted">Résultat attendu</span>
+                  <span style={{ fontWeight: 750 }}>Chemin + ETA (minutes)</span>
+                </div>
+
+                <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  Pour activer le routage, configure le graphe:
+                  <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                    <div>1) Ajouter des hubs (nodes) : CASA, RABAT, TANGER_MED, PARIS…</div>
+                    <div>2) Ajouter des liaisons (edges) avec un coût (minutes).</div>
+                    <div>3) Recharger cette page.</div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

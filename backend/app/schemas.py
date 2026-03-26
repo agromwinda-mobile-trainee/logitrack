@@ -134,11 +134,16 @@ class MaintenanceOut(BaseModel):
 
 
 class DeliveryCreate(BaseModel):
-    order_ref: str = Field(..., examples=["CMD-2026-0001"])
-    origin: str = "Casablanca"
-    destination: str = "Tanger Med"
+    # Pour un compte client, `order_ref` est générée automatiquement par l'API.
+    # Pour un admin, il peut être fourni (sinon généré aussi).
+    order_ref: str | None = Field(None, examples=["CMD-2026-0001"])
+    # Pour la création côté client, on attend des clés de hubs (ex: CASA, PARIS).
+    origin: str = "CASA"
+    destination: str = "TANGER_MED"
+    # Réservé admin: l'assignation véhicule se fait côté exploitation, pas côté client.
     vehicle_id: int | None = None
-    eta_minutes: int = 60
+    # Si absent, l'API calcule un ETA à partir du routage (ou fallback distance).
+    eta_minutes: int | None = None
     # Réservé aux admins: rattacher la commande à un compte client
     client_user_id: int | None = None
 

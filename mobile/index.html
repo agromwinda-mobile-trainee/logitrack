@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LogiTrack — Conducteur</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body data-api-base="http://localhost:8001/api">
@@ -39,6 +45,10 @@
           <div class="muted">Identification</div>
         </div>
         <div class="panelBody">
+          <div class="pill subtle" style="margin-bottom: 10px; justify-content: space-between;">
+            <span class="muted">Affectation</span>
+            <span id="assignedVehicleText" style="font-weight: 800;">—</span>
+          </div>
           <label class="label" for="vehicleSelect">Choisir</label>
           <select id="vehicleSelect" class="input"></select>
           <div style="height: 10px;"></div>
@@ -58,6 +68,7 @@
           <div id="geoBadge" class="pill subtle">—</div>
         </div>
         <div class="panelBody">
+          <div class="mapBox" id="mapBox"></div>
           <div class="grid">
             <div class="kv">
               <div class="k">Lat / Lon</div>
@@ -97,6 +108,11 @@
       </section>
     </div>
 
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

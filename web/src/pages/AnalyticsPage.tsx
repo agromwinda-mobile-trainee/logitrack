@@ -27,7 +27,7 @@ export function AnalyticsPage() {
     <div className="panel">
       <div className="panelHeader">
         <div className="panelTitle">Analytics — Consommation carburant</div>
-        <div className="muted">Moyenne sur les dernières 4h (simple)</div>
+        <div className="muted">Moyenne sur les dernières 4h </div>
       </div>
       <div className="panelBody">
         {error ? <div style={{ color: "#CE2232" }}>{error}</div> : null}

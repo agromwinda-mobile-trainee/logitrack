@@ -49,6 +49,8 @@ const el = {
   vehicleSelect: document.getElementById("vehicleSelect"),
   vehicleIdInput: document.getElementById("vehicleIdInput"),
   fuelInput: document.getElementById("fuelInput"),
+  assignedVehicleText: document.getElementById("assignedVehicleText"),
+  mapBox: document.getElementById("mapBox"),
   netDot: document.getElementById("netDot"),
   netText: document.getElementById("netText"),
   latLon: document.getElementById("latLon"),
@@ -65,6 +67,61 @@ const el = {
 let selectedVehicleId = null;
 let watchId = null;
 let tracking = false;
+
+// Carte conducteur (Leaflet)
+let map = null;
+let marker = null;
+let accuracyCircle = null;
+let mapReady = false;
+
+function initMapIfPossible() {
+  try {
+    if (mapReady) return;
+    if (!el.mapBox) return;
+    if (typeof window.L === "undefined") return;
+
+    map = window.L.map(el.mapBox, { zoomControl: true });
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap",
+      maxZoom: 19,
+    }).addTo(map);
+    map.setView([33.5731, -7.5898], 12);
+    mapReady = true;
+  } catch {
+    // ignore
+  }
+}
+
+function updateMap(lat, lon, accuracyM) {
+  if (!mapReady) return;
+  const ll = [lat, lon];
+  if (!marker) {
+    marker = window.L.circleMarker(ll, {
+      radius: 7,
+      color: "#0974B0",
+      weight: 2,
+      fillColor: "#0974B0",
+      fillOpacity: 0.22,
+    }).addTo(map);
+    map.setView(ll, 15);
+  } else {
+    marker.setLatLng(ll);
+  }
+
+  if (typeof accuracyM === "number" && Number.isFinite(accuracyM)) {
+    if (!accuracyCircle) {
+      accuracyCircle = window.L.circle(ll, {
+        radius: accuracyM,
+        color: "#0974B0",
+        weight: 1,
+        fillOpacity: 0.06,
+      }).addTo(map);
+    } else {
+      accuracyCircle.setLatLng(ll);
+      accuracyCircle.setRadius(accuracyM);
+    }
+  }
+}
 
 function setNetworkOnline(online) {
   if (online) {
@@ -167,19 +224,44 @@ async function bootstrapVehicles() {
     }
     if (cachedVehicleId) {
       el.vehicleSelect.value = String(cachedVehicleId);
+      selectedVehicleId = Number(el.vehicleSelect.value);
+    } else {
+      // Affectation aléatoire (si pas de cache) : on choisit un véhicule existant.
+      const idx = Math.floor(Math.random() * vehicles.length);
+      const chosen = vehicles[idx];
+      el.vehicleSelect.value = String(chosen.id);
+      selectedVehicleId = Number(chosen.id);
     }
-    selectedVehicleId = Number(el.vehicleSelect.value);
   } else {
     // Sans liste véhicules (offline) on se base sur le cache.
     if (cachedVehicleId) selectedVehicleId = Number(cachedVehicleId);
   }
 
   if (selectedVehicleId) localStorage.setItem(LS_VEHICLE_ID, String(selectedVehicleId));
+
+  // Affichage affectation (propre)
+  try {
+    const selectedOpt = el.vehicleSelect?.selectedOptions?.[0];
+    if (selectedVehicleId && selectedOpt?.textContent) {
+      el.assignedVehicleText.textContent = selectedOpt.textContent;
+    } else if (selectedVehicleId) {
+      el.assignedVehicleText.textContent = `Véhicule #${selectedVehicleId}`;
+    } else {
+      el.assignedVehicleText.textContent = "—";
+    }
+  } catch {
+    // ignore
+  }
 }
 
 el.vehicleSelect.addEventListener("change", () => {
   selectedVehicleId = Number(el.vehicleSelect.value);
   localStorage.setItem(LS_VEHICLE_ID, String(selectedVehicleId));
+
+  if (el.assignedVehicleText) {
+    const selectedOpt = el.vehicleSelect?.selectedOptions?.[0];
+    el.assignedVehicleText.textContent = selectedOpt?.textContent ?? `Véhicule #${selectedVehicleId}`;
+  }
 
   renderPosition(loadLastPosition());
   renderGeofence(loadLastGeofence());
@@ -294,6 +376,9 @@ async function startTracking() {
       const payload = coordsToPositionPayload(selectedVehicleId, pos.coords);
       await sendPositionOrQueue(payload);
 
+      initMapIfPossible();
+      updateMap(payload.lat, payload.lon, pos.coords.accuracy);
+
       renderPosition({
         lat: payload.lat,
         lon: payload.lon,
@@ -331,8 +416,11 @@ async function start() {
   setNetworkOnline(false);
   await bootstrapVehicles();
 
+  initMapIfPossible();
   // Rendu cache immédiat
-  renderPosition(loadLastPosition());
+  const cached = loadLastPosition();
+  renderPosition(cached);
+  if (cached) updateMap(cached.lat, cached.lon, undefined);
   renderGeofence(loadLastGeofence());
 }
 
