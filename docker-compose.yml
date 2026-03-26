@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: logitrack_db
+    environment:
+      POSTGRES_DB: logitrack
+      POSTGRES_USER: logitrack
+      POSTGRES_PASSWORD: logitrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - logitrack_db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    image: logitrack-backend:latest
+    container_name: logitrack_backend
+    depends_on:
+      - db
+    environment:
+      LOGITRACK_DATABASE_URL: postgresql+psycopg://logitrack:logitrack@db:5432/logitrack
+      LOGITRACK_CORS_ALLOW_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_API_BASE: "http://localhost:8000/api"
+    image: logitrack-web:latest
+    container_name: logitrack_web
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  logitrack_db_data:
+
